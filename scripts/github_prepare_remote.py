@@ -69,6 +69,65 @@ def load_gh_cli(*, require_auth: bool) -> GhCliContext:
     return GhCliContext(gh_path=gh_path)
 
 
+def gh_status(gh: GhCliContext) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [gh.gh_path, "auth", "status"],
+        text=True,
+        capture_output=True,
+    )
+
+
+def ensure_gh_cli_ready(
+    *,
+    login_if_needed: bool,
+    git_protocol: str,
+    setup_git: bool,
+) -> GhCliContext:
+    gh = load_gh_cli(require_auth=False)
+    status = gh_status(gh)
+    if status.returncode != 0:
+        if not login_if_needed:
+            raise GitHubApiError(
+                "GitHub CLI is installed but not authenticated. "
+                "Run `gh auth login --git-protocol https`, verify with "
+                "`gh auth status`, then retry."
+            )
+        login_cmd = [
+            gh.gh_path,
+            "auth",
+            "login",
+            "--git-protocol",
+            git_protocol,
+            "--web",
+        ]
+        if git_protocol == "ssh":
+            login_cmd.append("--skip-ssh-key")
+        login = subprocess.run(login_cmd, text=True)
+        if login.returncode != 0:
+            raise GitHubApiError(
+                f"GitHub CLI login failed ({login.returncode}): {quote_cmd(login_cmd)}"
+            )
+        status = gh_status(gh)
+        if status.returncode != 0:
+            raise GitHubApiError(
+                "GitHub CLI login completed, but `gh auth status` is still not ready."
+            )
+
+    if setup_git:
+        setup = subprocess.run(
+            [gh.gh_path, "auth", "setup-git"],
+            text=True,
+            capture_output=True,
+        )
+        if setup.returncode != 0:
+            detail = setup.stderr.strip() or setup.stdout.strip()
+            raise GitHubApiError(
+                f"GitHub CLI git credential setup failed ({setup.returncode}).\n{detail}"
+            )
+
+    return gh
+
+
 def gh_api_request(
     gh: GhCliContext,
     method: str,
@@ -469,6 +528,14 @@ def summarize_repo_data(
     }
 
 
+def apply_preferred_remote_url(summary: dict[str, Any], remote_protocol: str) -> dict[str, Any]:
+    if remote_protocol == "ssh":
+        summary["preferred_remote_url"] = summary.get("ssh_url") or summary.get("clone_url")
+    else:
+        summary["preferred_remote_url"] = summary.get("clone_url") or summary.get("ssh_url")
+    return summary
+
+
 def summarize_repo(
     auth: AuthContext,
     repo: dict[str, Any],
@@ -494,6 +561,7 @@ def prepare_remote(
     wait_seconds: int,
     reuse_existing: bool,
     prefer_gh_cli: bool,
+    remote_protocol: str,
     api_base: str = API_BASE,
 ) -> dict[str, Any]:
     if prefer_gh_cli:
@@ -520,11 +588,12 @@ def prepare_remote(
         else:
             raise GitHubApiError("One of create or fork must be provided.")
         viewer = gh_get_viewer(gh)
-        return summarize_repo_data(
+        summary = summarize_repo_data(
             repo=repo,
             viewer_login=viewer.get("login"),
             auth_source="gh cli",
         )
+        return apply_preferred_remote_url(summary, remote_protocol)
 
     auth = load_token()
     if fork:
@@ -550,7 +619,8 @@ def prepare_remote(
         )
     else:
         raise GitHubApiError("One of create or fork must be provided.")
-    return summarize_repo(auth, repo, api_base=api_base)
+    summary = summarize_repo(auth, repo, api_base=api_base)
+    return apply_preferred_remote_url(summary, remote_protocol)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -576,6 +646,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--prefer-gh-cli",
         action="store_true",
         help="Use authenticated GitHub CLI commands before falling back to raw token-based API calls.",
+    )
+    parser.add_argument(
+        "--remote-protocol",
+        choices=("https", "ssh"),
+        default="https",
+        help="Preferred remote URL type to return. Default: https.",
     )
     parser.add_argument(
         "--wait-seconds",
@@ -607,13 +683,14 @@ def main() -> int:
             wait_seconds=args.wait_seconds,
             reuse_existing=args.reuse_existing,
             prefer_gh_cli=args.prefer_gh_cli,
+            remote_protocol=args.remote_protocol,
             api_base=args.api_base_url,
         )
         if args.json:
             print(json.dumps(summary, ensure_ascii=True, indent=2))
         else:
             print(f"Resolved repository: {summary['full_name']}")
-            print(f"SSH URL: {summary['ssh_url']}")
+            print(f"Preferred remote URL: {summary.get('preferred_remote_url')}")
             print(f"HTML URL: {summary['html_url']}")
             print(f"Viewer: {summary['viewer_login']}")
             print(f"Auth source: {summary['auth_source']}")

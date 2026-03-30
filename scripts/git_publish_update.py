@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from github_prepare_remote import GitHubApiError, load_gh_cli, prepare_remote
+from github_prepare_remote import GitHubApiError, ensure_gh_cli_ready, prepare_remote
 
 
 class GitCommandError(RuntimeError):
@@ -151,12 +151,17 @@ def resolve_remote_url(args: argparse.Namespace) -> str | None:
             wait_seconds=args.wait_seconds,
             reuse_existing=args.reuse_existing_repo,
             prefer_gh_cli=args.prefer_gh_cli,
+            remote_protocol=args.gh_remote_protocol,
             api_base=args.api_base_url,
         )
     except GitHubApiError as exc:
         raise GitCommandError(str(exc)) from exc
 
-    remote_url = summary.get("ssh_url") or summary.get("clone_url")
+    remote_url = (
+        summary.get("preferred_remote_url")
+        or summary.get("clone_url")
+        or summary.get("ssh_url")
+    )
     if not remote_url:
         raise GitCommandError("GitHub remote preparation did not return a usable remote URL.")
     print(f"Prepared GitHub remote: {summary['full_name']}")
@@ -167,9 +172,40 @@ def resolve_remote_url(args: argparse.Namespace) -> str | None:
 def ensure_cli_auth_ready(args: argparse.Namespace) -> None:
     if not args.prefer_gh_cli:
         return
-    if not args.create_github_repo and not args.fork_github_repo:
+    if not (
+        args.create_github_repo
+        or args.fork_github_repo
+        or args.gh_login_if_needed
+        or args.gh_setup_git
+    ):
         return
-    load_gh_cli(require_auth=True)
+    ensure_gh_cli_ready(
+        login_if_needed=args.gh_login_if_needed,
+        git_protocol=args.gh_login_protocol,
+        setup_git=args.gh_setup_git,
+    )
+
+
+def normalize_args(args: argparse.Namespace, repo: Path) -> argparse.Namespace:
+    if not args.simple:
+        return args
+
+    args.prefer_gh_cli = True
+    args.gh_login_if_needed = True
+    args.gh_setup_git = True
+    args.gh_login_protocol = "https"
+    args.gh_remote_protocol = "https"
+    args.init_if_needed = True
+    args.reuse_existing_repo = True
+
+    if not args.create_github_repo and not args.fork_github_repo and not args.remote_url:
+        if origin_url(repo) is None:
+            args.create_github_repo = repo.name
+
+    if not args.message:
+        args.message = "Publish project"
+
+    return args
 
 
 def stage_changes(repo: Path, paths: list[str]) -> None:
@@ -268,6 +304,37 @@ def parse_args() -> argparse.Namespace:
         help="Use authenticated GitHub CLI commands first when creating or forking a remote.",
     )
     parser.add_argument(
+        "--simple",
+        action="store_true",
+        help=(
+            "Fast path: infer the repo name from the folder, enable GitHub CLI, "
+            "log in if needed, configure git credentials, reuse existing repos, "
+            "and prefer HTTPS remotes."
+        ),
+    )
+    parser.add_argument(
+        "--gh-login-if-needed",
+        action="store_true",
+        help="When GitHub CLI is preferred, launch `gh auth login` automatically if needed.",
+    )
+    parser.add_argument(
+        "--gh-setup-git",
+        action="store_true",
+        help="Run `gh auth setup-git` before publishing when GitHub CLI is preferred.",
+    )
+    parser.add_argument(
+        "--gh-login-protocol",
+        choices=("https", "ssh"),
+        default="https",
+        help="Protocol to configure during `gh auth login`. Default: https.",
+    )
+    parser.add_argument(
+        "--gh-remote-protocol",
+        choices=("https", "ssh"),
+        default="https",
+        help="Remote URL type to prefer when creating or resolving a GitHub repo. Default: https.",
+    )
+    parser.add_argument(
         "--wait-seconds",
         type=int,
         default=30,
@@ -321,6 +388,7 @@ def main() -> int:
     if not repo.exists() or not repo.is_dir():
         print(f"Repository path does not exist or is not a directory: {repo}", file=sys.stderr)
         return 1
+    args = normalize_args(args, repo)
 
     try:
         ensure_cli_auth_ready(args)
