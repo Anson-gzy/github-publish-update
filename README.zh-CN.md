@@ -106,6 +106,18 @@ python3 scripts/git_publish_update.py /path/to/repo --simple
 - 初始化本地 git 仓库
 - 提交并推送当前改动
 
+正常情况下，你不需要每次都输入设备码。标准流程应该是：
+
+1. `gh auth login` 登录一次
+2. `gh auth setup-git` 配置一次
+3. 后续复用系统 keychain 里的 token
+
+只有在下面这些场景里，才可能再次看到设备码：
+
+- GitHub CLI token 失效了
+- 你主动执行过 `gh auth logout`
+- 你需要额外的 scope，比如 `delete_repo`
+
 ### 1. 首次使用先登录 GitHub CLI
 
 ```bash
@@ -120,6 +132,14 @@ python3 scripts/gh_auth_bootstrap.py
 
 ```bash
 python3 scripts/gh_auth_bootstrap.py --login --setup-git
+```
+
+如果以后只是补一个额外 scope，优先走 refresh，不要整套重登：
+
+```bash
+python3 scripts/gh_auth_bootstrap.py \
+  --ensure-scope delete_repo \
+  --refresh-if-needed
 ```
 
 登录完成后，建议验证一次：
@@ -235,6 +255,8 @@ export GITHUB_PAT=your_token_here
 
 如果你使用 `--simple` 或 `--prefer-gh-cli`，远程仓库的创建和 fork 会优先通过 `gh` CLI 完成。
 
+如果后面只是缺少额外权限，尽量用 `gh auth refresh`，不要每次都重新 `gh auth login`。
+
 ## 推荐提问方式
 
 - “把这个项目上传到 GitHub”
@@ -270,6 +292,26 @@ gh auth setup-git
 ```bash
 brew install gh
 ```
+
+### 为什么又看到设备验证码了？
+
+正常来说不应该频繁出现。
+
+先检查当前 GitHub CLI 状态：
+
+```bash
+python3 scripts/gh_auth_bootstrap.py --setup-git
+```
+
+如果只是补一个 scope：
+
+```bash
+python3 scripts/gh_auth_bootstrap.py \
+  --ensure-scope delete_repo \
+  --refresh-if-needed
+```
+
+这比重新完整登录更快。
 
 ### `origin already exists and points to a different URL`
 

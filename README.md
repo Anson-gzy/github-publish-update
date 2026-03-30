@@ -106,6 +106,18 @@ This will automatically:
 - initialize a git repository if needed
 - commit and push current changes
 
+In a healthy setup, you should not need to enter a device code every time. A normal flow is:
+
+1. `gh auth login` once
+2. `gh auth setup-git` once
+3. Reuse the saved keychain token for later operations
+
+You should only see another device code when:
+
+- the GitHub CLI token has become invalid
+- you logged out of `gh`
+- you need an additional scope, such as `delete_repo`
+
 ### 1. Set up GitHub CLI first
 
 ```bash
@@ -120,6 +132,14 @@ If it reports that you are not logged in:
 
 ```bash
 python3 scripts/gh_auth_bootstrap.py --login --setup-git
+```
+
+If you only need to add an extra scope later, prefer refresh over full login:
+
+```bash
+python3 scripts/gh_auth_bootstrap.py \
+  --ensure-scope delete_repo \
+  --refresh-if-needed
 ```
 
 Then verify:
@@ -233,6 +253,8 @@ The scripts can use:
 
 If you use `--simple` or `--prefer-gh-cli`, repository creation and fork flows will prefer GitHub CLI first.
 
+If you need extra permissions later, use `gh auth refresh` instead of a full re-login whenever possible.
+
 ## Suggested Prompts
 
 - "Upload this project to GitHub"
@@ -268,6 +290,26 @@ If `gh` is not installed yet:
 ```bash
 brew install gh
 ```
+
+### Why am I seeing device codes again?
+
+Usually you should not need them repeatedly.
+
+Check your current GitHub CLI health first:
+
+```bash
+python3 scripts/gh_auth_bootstrap.py --setup-git
+```
+
+If you only need an extra scope:
+
+```bash
+python3 scripts/gh_auth_bootstrap.py \
+  --ensure-scope delete_repo \
+  --refresh-if-needed
+```
+
+That path is faster than doing a full `gh auth login` again.
 
 ### `origin already exists and points to a different URL`
 

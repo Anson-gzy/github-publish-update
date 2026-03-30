@@ -17,15 +17,18 @@ Publish a local folder or git repository to GitHub, then reuse the same workflow
 2. If GitHub CLI is not ready:
    - Run `python3 scripts/gh_auth_bootstrap.py --login --setup-git`.
    - If `gh` is not installed, guide the user to install it with `brew install gh`.
-3. Inspect `git status --short --branch`, `git remote -v`, and `.gitignore` before pushing.
-4. Reuse the current `origin` unless the user clearly wants a different remote.
-5. Create or confirm the GitHub repository:
+3. If GitHub CLI is already logged in but needs an extra scope:
+   - Prefer `python3 scripts/gh_auth_bootstrap.py --ensure-scope <scope> --refresh-if-needed`.
+   - Do not default to a full `gh auth login` when `gh auth refresh` is sufficient.
+4. Inspect `git status --short --branch`, `git remote -v`, and `.gitignore` before pushing.
+5. Reuse the current `origin` unless the user clearly wants a different remote.
+6. Create or confirm the GitHub repository:
    - Prefer GitHub MCP when it is available.
    - Otherwise prefer authenticated GitHub CLI with `--simple` or `--prefer-gh-cli`.
    - If CLI is unavailable, use the integrated headless GitHub API flow in `scripts/git_publish_update.py`.
    - The API helper uses `GITHUB_PAT`, `GITHUB_TOKEN`, `GH_TOKEN`, `GH_PAT`, or `gh auth token`.
    - Fall back to a user-provided repository URL when API-based creation is unavailable.
-6. Verify with `git status --short --branch`, `git remote -v`, and `git log --oneline --decorate -1`.
+7. Verify with `git status --short --branch`, `git remote -v`, and `git log --oneline --decorate -1`.
 
 ## Safety Checks
 
@@ -34,6 +37,7 @@ Publish a local folder or git repository to GitHub, then reuse the same workflow
 - Prefer HTTPS remotes with `gh auth setup-git` for the default fast path.
 - Use SSH only when the user explicitly wants SSH or their environment requires it.
 - If GitHub CLI is missing or unauthenticated, guide the user through installation and `python3 scripts/gh_auth_bootstrap.py --login --setup-git` before the first publish attempt.
+- If a later task only needs extra scopes, prefer `gh auth refresh` instead of a full re-login.
 - Mention when git author identity is auto-derived and may need cleanup before a public push.
 - If the working tree contains unrelated user changes, preserve them and stage only the intended paths.
 - Do not use a browser as a default fallback. If GitHub MCP, `gh`, API tokens, and a user-provided remote are all unavailable, stop and ask for a GitHub token or repository URL instead.
