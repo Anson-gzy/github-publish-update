@@ -1,7 +1,7 @@
 interface:
   display_name: "GitHub Publish & Update"
   short_description: "Publish a local project and push updates to GitHub"
-  default_prompt: "Use $github-publish-update to check GitHub CLI login, guide me through authentication if needed, then publish this project to GitHub and push the latest updates."
+  default_prompt: "Use $github-publish-update to run the simplest publish flow: check GitHub CLI login, set up git credentials if needed, then publish this project to GitHub and push the latest updates."
 
 dependencies:
   tools:

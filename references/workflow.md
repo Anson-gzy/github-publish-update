@@ -3,9 +3,10 @@
 ## Decision Tree
 
 1. Check the local repository state first.
-   - Run `python3 scripts/gh_auth_bootstrap.py` or `gh auth status`.
+   - Prefer `python3 scripts/git_publish_update.py /path/to/repo --simple`.
+   - Or run `python3 scripts/gh_auth_bootstrap.py --login --setup-git`.
    - If `gh` is missing, install it with `brew install gh`.
-   - If `gh` is installed but unauthenticated, run `gh auth login --git-protocol ssh`.
+   - If `gh` is installed but unauthenticated, run `gh auth login --git-protocol https`.
    - Run `git status --short --branch`.
    - Run `git remote -v`.
    - Inspect `.gitignore`.
@@ -14,8 +15,8 @@
    - Later update: reuse `origin` unless the user wants a different repo.
 3. Decide how to resolve the remote repository.
    - Prefer GitHub MCP when it is available and authenticated.
-   - Otherwise prefer GitHub CLI with `scripts/git_publish_update.py --prefer-gh-cli --create-github-repo ...` or `--fork-github-repo ...`.
-   - Use `scripts/gh_auth_bootstrap.py --login` when the user wants guided GitHub CLI onboarding.
+   - Otherwise prefer GitHub CLI with `scripts/git_publish_update.py --simple`.
+   - Use `scripts/gh_auth_bootstrap.py --login --setup-git` when the user wants guided GitHub CLI onboarding.
    - The headless API path accepts `GITHUB_PAT`, `GITHUB_TOKEN`, `GH_TOKEN`, `GH_PAT`, or `gh auth token`.
    - Fall back to a user-provided GitHub URL only when the API path is unavailable.
 4. Decide how much to stage.
@@ -31,11 +32,7 @@
 ### Publish a new folder
 
 ```bash
-python3 scripts/git_publish_update.py /path/to/repo \
-  --init-if-needed \
-  --prefer-gh-cli \
-  --create-github-repo repo-name \
-  --message "Initial publish"
+python3 scripts/git_publish_update.py /path/to/repo --simple
 ```
 
 ### Fork an existing GitHub repo without a browser
@@ -43,6 +40,9 @@ python3 scripts/git_publish_update.py /path/to/repo \
 ```bash
 python3 scripts/git_publish_update.py /path/to/repo \
   --prefer-gh-cli \
+  --gh-login-if-needed \
+  --gh-setup-git \
+  --gh-remote-protocol https \
   --fork-github-repo owner/repo \
   --change-remote \
   --message "Push to fork"
@@ -68,7 +68,7 @@ python3 scripts/git_publish_update.py /path/to/repo \
 
 ```bash
 python3 scripts/git_publish_update.py /path/to/repo \
-  --remote-url git@github.com:user/new-repo.git \
+  --remote-url https://github.com/user/new-repo.git \
   --change-remote \
   --message "Move to new remote"
 ```
@@ -76,8 +76,8 @@ python3 scripts/git_publish_update.py /path/to/repo \
 ## Guardrails
 
 - Do not overwrite `origin` silently.
-- Prefer SSH URLs to avoid interactive HTTPS credential prompts.
-- On first use, prefer guiding the user through `gh auth login --git-protocol ssh` so later uploads can complete directly.
+- Prefer HTTPS remotes with `gh auth setup-git` for the default fast path.
+- Only switch to SSH when the user explicitly wants SSH.
 - Call out suspicious files before staging:
   - `.env`
   - tokens or credentials
@@ -93,7 +93,7 @@ python3 scripts/git_publish_update.py /path/to/repo \
 
 - `No origin remote configured`: provide `--remote-url` or create the GitHub repo first.
 - `Current branch is ...`: rerun with `--checkout-branch` if the user wants to switch branches.
-- Push auth failure over HTTPS: switch to SSH or confirm GitHub credentials.
+- Push auth failure over HTTPS: rerun `gh auth setup-git` or confirm GitHub credentials.
 - Host key verification failure over SSH: perform a one-time SSH handshake and retry.
 - Original repo is read-only: create a fork headlessly and push there instead.
 - No GitHub API auth available: ask for `GITHUB_PAT`, `GITHUB_TOKEN`, `GH_TOKEN`, `gh auth login`, or a repository URL.

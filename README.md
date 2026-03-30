@@ -2,7 +2,7 @@
 
 `github-publish-update` 是一个面向 Codex 的技能（skill），用于把本地项目无浏览器发布到 GitHub，并在后续继续用同一套流程推送更新。
 
-它优先使用 GitHub MCP 创建或确认远程仓库；如果 MCP 不可用，则优先走已登录的 GitHub CLI；再不行才回退到内置的 Python 脚本，通过 GitHub API、环境变量令牌或 `gh auth token` 完成仓库创建、fork、提交和推送。
+它优先使用 GitHub MCP 创建或确认远程仓库；如果 MCP 不可用，则优先走已登录的 GitHub CLI，并默认配合 HTTPS 远程和 `gh auth setup-git`；再不行才回退到内置的 Python 脚本，通过 GitHub API、环境变量令牌或 `gh auth token` 完成仓库创建、fork、提交和推送。
 
 ## 功能亮点
 
@@ -12,7 +12,8 @@
 - 检查 `git status`、`git remote -v` 和 `.gitignore`
 - 只暂存指定路径，避免误提交无关改动
 - 通过 GitHub API 无浏览器创建仓库或 fork 仓库
-- 优先使用 SSH 远程地址，减少交互式认证问题
+- 提供 `--simple` 一键发布模式
+- 默认优先使用 HTTPS 远程和 GitHub CLI 凭证助手，减少 SSH 配置问题
 - 对 `.env`、大文件、产物目录、模型文件等风险内容做发布前提示
 
 ## 目录结构
@@ -87,7 +88,26 @@ ln -s /path/to/github-publish-update ~/.codex/skills/github-publish-update
 
 ## 使用教程
 
-### 0. 首次使用先登录 GitHub CLI
+### 0. 最快方式：一条命令发布
+
+现在推荐的最快用法是：
+
+```bash
+python3 scripts/git_publish_update.py /path/to/repo --simple
+```
+
+它会自动做这些事：
+
+- 从文件夹名推导 GitHub 仓库名
+- 检查 GitHub CLI 是否已登录
+- 必要时引导登录
+- 运行 `gh auth setup-git`
+- 优先使用 HTTPS 远程
+- 复用同名远程仓库
+- 初始化本地 git 仓库（如果还没有）
+- 提交并推送当前改动
+
+### 1. 首次使用先登录 GitHub CLI
 
 推荐先做这一步，后面上传会顺很多：
 
@@ -102,13 +122,7 @@ python3 scripts/gh_auth_bootstrap.py
 如果提示还没登录，就执行：
 
 ```bash
-python3 scripts/gh_auth_bootstrap.py --login
-```
-
-或者直接执行：
-
-```bash
-gh auth login --git-protocol ssh
+python3 scripts/gh_auth_bootstrap.py --login --setup-git
 ```
 
 登录完成后，建议验证一次：
@@ -117,7 +131,14 @@ gh auth login --git-protocol ssh
 gh auth status
 ```
 
-### 1. 在对话中调用 skill
+或者直接执行：
+
+```bash
+gh auth login --git-protocol https
+gh auth setup-git
+```
+
+### 2. 在对话中调用 skill
 
 你可以直接对 Codex 说：
 
@@ -131,7 +152,7 @@ gh auth status
 Use $github-publish-update to publish this repo to GitHub.
 ```
 
-### 2. skill 的默认工作流程
+### 3. skill 的默认工作流程
 
 这个 skill 会优先执行下面的步骤：
 
@@ -145,7 +166,7 @@ Use $github-publish-update to publish this repo to GitHub.
 8. 暂存改动、创建提交、推送到远程
 9. 最后输出状态、远程地址和最新提交
 
-### 3. 直接运行脚本
+### 4. 直接运行脚本
 
 如果你不通过 Codex 调用，也可以直接运行仓库自带脚本。
 
@@ -154,9 +175,7 @@ Use $github-publish-update to publish this repo to GitHub.
 ```bash
 python3 scripts/git_publish_update.py /path/to/repo \
   --init-if-needed \
-  --prefer-gh-cli \
-  --create-github-repo repo-name \
-  --message "Initial publish"
+  --simple
 ```
 
 #### 推送现有仓库的最新改动
@@ -179,7 +198,7 @@ python3 scripts/git_publish_update.py /path/to/repo \
 
 ```bash
 python3 scripts/git_publish_update.py /path/to/repo \
-  --remote-url git@github.com:user/new-repo.git \
+  --remote-url https://github.com/user/new-repo.git \
   --change-remote \
   --message "Move to new remote"
 ```
@@ -189,6 +208,9 @@ python3 scripts/git_publish_update.py /path/to/repo \
 ```bash
 python3 scripts/git_publish_update.py /path/to/repo \
   --prefer-gh-cli \
+  --gh-login-if-needed \
+  --gh-setup-git \
+  --gh-remote-protocol https \
   --fork-github-repo owner/repo \
   --change-remote \
   --message "Push to fork"
@@ -216,7 +238,7 @@ export GITHUB_PAT=your_token_here
 - `GH_PAT`
 - `gh auth token`
 
-如果你使用 `--prefer-gh-cli`，远程仓库的创建和 fork 也会优先通过 `gh` CLI 完成。
+如果你使用 `--simple` 或 `--prefer-gh-cli`，远程仓库的创建和 fork 会优先通过 `gh` CLI 完成。
 
 ## 推荐提问方式
 
@@ -233,7 +255,8 @@ export GITHUB_PAT=your_token_here
 这个 skill 的设计重点不是“尽快推上去”，而是“安全地推上去”：
 
 - 不会默默覆盖已有 `origin`
-- 优先推荐 SSH 远程
+- 默认优先推荐 HTTPS 远程和 `gh auth setup-git`
+- 只有在你明确需要时才建议改用 SSH
 - 会先检查大文件、构建产物、`.env` 和敏感信息
 - 如果工作区里有无关改动，应该只暂存你明确指定的路径
 - 如果没有可用的 GitHub 认证，不会偷偷切到浏览器自动化，而是明确停下来提示你补令牌或仓库 URL
@@ -245,7 +268,8 @@ export GITHUB_PAT=your_token_here
 说明当前没有可用的 GitHub 认证。优先建议先执行：
 
 ```bash
-gh auth login --git-protocol ssh
+gh auth login --git-protocol https
+gh auth setup-git
 ```
 
 如果你还没有安装 `gh`，先执行：
@@ -262,12 +286,17 @@ brew install gh
 --change-remote
 ```
 
-### SSH 推送失败
+### 想强制使用 SSH
 
-如果报主机校验或密钥相关错误，先完成一次 SSH 握手检查：
+如果你的环境明确要求 SSH，可以显式传入：
 
 ```bash
-ssh -T git@github.com
+python3 scripts/git_publish_update.py /path/to/repo \
+  --prefer-gh-cli \
+  --gh-login-if-needed \
+  --gh-login-protocol ssh \
+  --gh-remote-protocol ssh \
+  --create-github-repo repo-name
 ```
 
 ## 参考资料

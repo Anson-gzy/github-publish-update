@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--login",
         action="store_true",
-        help="Launch `gh auth login --git-protocol ssh` when authentication is missing.",
+        help="Launch `gh auth login` when authentication is missing.",
     )
     parser.add_argument(
         "--git-protocol",
