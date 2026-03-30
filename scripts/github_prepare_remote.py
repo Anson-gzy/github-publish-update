@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -30,6 +31,89 @@ class AuthContext:
     source: str
 
 
+@dataclass
+class GhCliContext:
+    gh_path: str
+
+
+def quote_cmd(parts: list[str]) -> str:
+    return " ".join(shlex.quote(part) for part in parts)
+
+
+def gh_login_guidance() -> str:
+    return (
+        "GitHub CLI is not ready. Install it with `brew install gh` (or from "
+        "https://cli.github.com/), then run `gh auth login --git-protocol ssh` "
+        "and verify with `gh auth status`."
+    )
+
+
+def load_gh_cli(*, require_auth: bool) -> GhCliContext:
+    gh_path = shutil.which("gh")
+    if not gh_path:
+        raise GitHubApiError(gh_login_guidance())
+
+    if require_auth:
+        result = subprocess.run(
+            [gh_path, "auth", "status"],
+            text=True,
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            raise GitHubApiError(
+                "GitHub CLI is installed but not authenticated. "
+                "Run `gh auth login --git-protocol ssh`, verify with "
+                "`gh auth status`, then retry."
+            )
+
+    return GhCliContext(gh_path=gh_path)
+
+
+def gh_api_request(
+    gh: GhCliContext,
+    method: str,
+    path: str,
+    *,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    cmd = [
+        gh.gh_path,
+        "api",
+        path.lstrip("/"),
+        "--method",
+        method,
+        "--header",
+        "Accept: application/vnd.github+json",
+    ]
+    input_text = None
+    if payload is not None:
+        cmd.extend(["--input", "-"])
+        input_text = json.dumps(payload)
+
+    result = subprocess.run(
+        cmd,
+        text=True,
+        input=input_text,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.strip() or result.stdout.strip()
+        raise GitHubApiError(
+            f"GitHub CLI command failed ({result.returncode}): {quote_cmd(cmd)}\n"
+            f"{stderr}"
+        )
+
+    body = result.stdout.strip()
+    if not body:
+        return {}
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise GitHubApiError(
+            f"GitHub CLI command returned non-JSON content: {quote_cmd(cmd)}"
+        ) from exc
+
+
 def load_token() -> AuthContext:
     for env_name in TOKEN_ENV_VARS:
         value = os.environ.get(env_name, "").strip()
@@ -48,7 +132,9 @@ def load_token() -> AuthContext:
             return AuthContext(token=token, source="gh auth token")
 
     raise GitHubApiError(
-        "No GitHub API token available. Set GITHUB_PAT, GITHUB_TOKEN, GH_TOKEN, or GH_PAT, or run `gh auth login` first."
+        "No GitHub API token available. Set GITHUB_PAT, GITHUB_TOKEN, GH_TOKEN, or "
+        "GH_PAT, or install/authenticate GitHub CLI first. "
+        + gh_login_guidance()
     )
 
 
@@ -143,6 +229,24 @@ def repo_exists(
         raise
 
 
+def gh_get_viewer(gh: GhCliContext) -> dict[str, Any]:
+    return gh_api_request(gh, "GET", "/user")
+
+
+def gh_get_repo(gh: GhCliContext, owner: str, repo: str) -> dict[str, Any]:
+    return gh_api_request(gh, "GET", f"/repos/{owner}/{repo}")
+
+
+def gh_repo_exists(gh: GhCliContext, owner: str, repo: str) -> dict[str, Any] | None:
+    try:
+        return gh_get_repo(gh, owner, repo)
+    except GitHubApiError as exc:
+        message = str(exc).lower()
+        if "404" in message or "not found" in message:
+            return None
+        raise
+
+
 def create_repo(
     auth: AuthContext,
     *,
@@ -180,6 +284,30 @@ def create_repo(
         payload=payload,
         expected=(201,),
     )
+
+
+def gh_create_repo(
+    gh: GhCliContext,
+    *,
+    owner: str,
+    name: str,
+    private: bool,
+    description: str | None,
+    homepage: str | None,
+) -> dict[str, Any]:
+    viewer = gh_get_viewer(gh)
+    payload: dict[str, Any] = {
+        "name": name,
+        "private": private,
+    }
+    if description:
+        payload["description"] = description
+    if homepage:
+        payload["homepage"] = homepage
+
+    if owner == viewer["login"]:
+        return gh_api_request(gh, "POST", "/user/repos", payload=payload)
+    return gh_api_request(gh, "POST", f"/orgs/{owner}/repos", payload=payload)
 
 
 def fork_repo(
@@ -223,6 +351,44 @@ def fork_repo(
     )
 
 
+def gh_fork_repo(
+    gh: GhCliContext,
+    *,
+    source_owner: str,
+    source_repo: str,
+    target_owner: str | None,
+    wait_seconds: int,
+) -> dict[str, Any]:
+    viewer = gh_get_viewer(gh)
+    destination_owner = target_owner or viewer["login"]
+
+    existing = gh_repo_exists(gh, destination_owner, source_repo)
+    if existing:
+        return existing
+
+    payload: dict[str, Any] = {}
+    if target_owner and target_owner != viewer["login"]:
+        payload["organization"] = target_owner
+
+    gh_api_request(
+        gh,
+        "POST",
+        f"/repos/{source_owner}/{source_repo}/forks",
+        payload=payload or None,
+    )
+
+    deadline = time.time() + max(wait_seconds, 5)
+    while time.time() < deadline:
+        found = gh_repo_exists(gh, destination_owner, source_repo)
+        if found:
+            return found
+        time.sleep(2)
+
+    raise GitHubApiError(
+        f"Fork creation started but {destination_owner}/{source_repo} was not ready within {wait_seconds} seconds."
+    )
+
+
 def create_or_reuse_repo(
     auth: AuthContext,
     *,
@@ -251,6 +417,58 @@ def create_or_reuse_repo(
     )
 
 
+def gh_create_or_reuse_repo(
+    gh: GhCliContext,
+    *,
+    owner: str | None,
+    name: str,
+    private: bool,
+    description: str | None,
+    homepage: str | None,
+    reuse_existing: bool,
+) -> dict[str, Any]:
+    viewer = gh_get_viewer(gh)
+    target_owner = owner or viewer["login"]
+    if reuse_existing:
+        existing = gh_repo_exists(gh, target_owner, name)
+        if existing:
+            return existing
+    return gh_create_repo(
+        gh,
+        owner=target_owner,
+        name=name,
+        private=private,
+        description=description,
+        homepage=homepage,
+    )
+
+
+def summarize_repo_data(
+    *,
+    repo: dict[str, Any],
+    viewer_login: str | None,
+    auth_source: str,
+) -> dict[str, Any]:
+    owner = repo.get("owner") or {}
+    default_branch = repo.get("default_branch")
+    if not default_branch:
+        default_branch_ref = repo.get("defaultBranchRef") or {}
+        default_branch = default_branch_ref.get("name")
+
+    return {
+        "full_name": repo.get("full_name"),
+        "owner": owner.get("login"),
+        "name": repo.get("name"),
+        "html_url": repo.get("html_url"),
+        "ssh_url": repo.get("ssh_url"),
+        "clone_url": repo.get("clone_url"),
+        "default_branch": default_branch,
+        "private": repo.get("private"),
+        "viewer_login": viewer_login,
+        "auth_source": auth_source,
+    }
+
+
 def summarize_repo(
     auth: AuthContext,
     repo: dict[str, Any],
@@ -258,18 +476,11 @@ def summarize_repo(
     api_base: str = API_BASE,
 ) -> dict[str, Any]:
     viewer = get_viewer(auth, api_base=api_base)
-    return {
-        "full_name": repo.get("full_name"),
-        "owner": repo.get("owner", {}).get("login"),
-        "name": repo.get("name"),
-        "html_url": repo.get("html_url"),
-        "ssh_url": repo.get("ssh_url"),
-        "clone_url": repo.get("clone_url"),
-        "default_branch": repo.get("default_branch"),
-        "private": repo.get("private"),
-        "viewer_login": viewer.get("login"),
-        "auth_source": auth.source,
-    }
+    return summarize_repo_data(
+        repo=repo,
+        viewer_login=viewer.get("login"),
+        auth_source=auth.source,
+    )
 
 
 def prepare_remote(
@@ -282,8 +493,39 @@ def prepare_remote(
     homepage: str | None,
     wait_seconds: int,
     reuse_existing: bool,
+    prefer_gh_cli: bool,
     api_base: str = API_BASE,
 ) -> dict[str, Any]:
+    if prefer_gh_cli:
+        gh = load_gh_cli(require_auth=True)
+        if fork:
+            source_owner, source_repo = parse_owner_repo(fork)
+            repo = gh_fork_repo(
+                gh,
+                source_owner=source_owner,
+                source_repo=source_repo,
+                target_owner=owner,
+                wait_seconds=wait_seconds,
+            )
+        elif create:
+            repo = gh_create_or_reuse_repo(
+                gh,
+                owner=owner,
+                name=create,
+                private=private,
+                description=description,
+                homepage=homepage,
+                reuse_existing=reuse_existing,
+            )
+        else:
+            raise GitHubApiError("One of create or fork must be provided.")
+        viewer = gh_get_viewer(gh)
+        return summarize_repo_data(
+            repo=repo,
+            viewer_login=viewer.get("login"),
+            auth_source="gh cli",
+        )
+
     auth = load_token()
     if fork:
         source_owner, source_repo = parse_owner_repo(fork)
@@ -331,6 +573,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Return the existing repository when --create targets a repo that already exists under the same owner.",
     )
     parser.add_argument(
+        "--prefer-gh-cli",
+        action="store_true",
+        help="Use authenticated GitHub CLI commands before falling back to raw token-based API calls.",
+    )
+    parser.add_argument(
         "--wait-seconds",
         type=int,
         default=30,
@@ -359,6 +606,7 @@ def main() -> int:
             homepage=args.homepage,
             wait_seconds=args.wait_seconds,
             reuse_existing=args.reuse_existing,
+            prefer_gh_cli=args.prefer_gh_cli,
             api_base=args.api_base_url,
         )
         if args.json:

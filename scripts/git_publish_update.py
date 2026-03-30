@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from github_prepare_remote import GitHubApiError, prepare_remote
+from github_prepare_remote import GitHubApiError, load_gh_cli, prepare_remote
 
 
 class GitCommandError(RuntimeError):
@@ -150,6 +150,7 @@ def resolve_remote_url(args: argparse.Namespace) -> str | None:
             homepage=args.repo_homepage,
             wait_seconds=args.wait_seconds,
             reuse_existing=args.reuse_existing_repo,
+            prefer_gh_cli=args.prefer_gh_cli,
             api_base=args.api_base_url,
         )
     except GitHubApiError as exc:
@@ -161,6 +162,14 @@ def resolve_remote_url(args: argparse.Namespace) -> str | None:
     print(f"Prepared GitHub remote: {summary['full_name']}")
     print(f"Remote URL: {remote_url}")
     return remote_url
+
+
+def ensure_cli_auth_ready(args: argparse.Namespace) -> None:
+    if not args.prefer_gh_cli:
+        return
+    if not args.create_github_repo and not args.fork_github_repo:
+        return
+    load_gh_cli(require_auth=True)
 
 
 def stage_changes(repo: Path, paths: list[str]) -> None:
@@ -254,6 +263,11 @@ def parse_args() -> argparse.Namespace:
         help="Reuse an existing GitHub repository with the same owner/name when auto-creating a remote.",
     )
     parser.add_argument(
+        "--prefer-gh-cli",
+        action="store_true",
+        help="Use authenticated GitHub CLI commands first when creating or forking a remote.",
+    )
+    parser.add_argument(
         "--wait-seconds",
         type=int,
         default=30,
@@ -309,6 +323,7 @@ def main() -> int:
         return 1
 
     try:
+        ensure_cli_auth_ready(args)
         ensure_repo(repo, args.branch or "main", args.init_if_needed)
         branch = ensure_branch(repo, args.branch, args.checkout_branch)
         remote_url = resolve_remote_url(args)
@@ -318,7 +333,7 @@ def main() -> int:
         if not args.skip_push:
             push(repo, branch)
         show_summary(repo)
-    except GitCommandError as exc:
+    except (GitCommandError, GitHubApiError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
     return 0

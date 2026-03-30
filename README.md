@@ -2,7 +2,7 @@
 
 `github-publish-update` 是一个面向 Codex 的技能（skill），用于把本地项目无浏览器发布到 GitHub，并在后续继续用同一套流程推送更新。
 
-它优先使用 GitHub MCP 创建或确认远程仓库；如果 MCP 不可用，则回退到内置的 Python 脚本，通过 GitHub API、环境变量令牌或 `gh auth token` 完成仓库创建、fork、提交和推送。
+它优先使用 GitHub MCP 创建或确认远程仓库；如果 MCP 不可用，则优先走已登录的 GitHub CLI；再不行才回退到内置的 Python 脚本，通过 GitHub API、环境变量令牌或 `gh auth token` 完成仓库创建、fork、提交和推送。
 
 ## 功能亮点
 
@@ -26,6 +26,7 @@ github-publish-update/
 ├── references/
 │   └── workflow.md
 └── scripts/
+    ├── gh_auth_bootstrap.py
     ├── git_publish_update.py
     └── github_prepare_remote.py
 ```
@@ -42,6 +43,7 @@ github-publish-update/
 
 - `git`
 - `python3`
+- 建议安装 `gh`（GitHub CLI）
 - 以下认证方式至少一种：
 - GitHub MCP
 - `GITHUB_PAT` / `GITHUB_TOKEN` / `GH_TOKEN` / `GH_PAT`
@@ -85,6 +87,36 @@ ln -s /path/to/github-publish-update ~/.codex/skills/github-publish-update
 
 ## 使用教程
 
+### 0. 首次使用先登录 GitHub CLI
+
+推荐先做这一步，后面上传会顺很多：
+
+```bash
+brew install gh
+```
+
+```bash
+python3 scripts/gh_auth_bootstrap.py
+```
+
+如果提示还没登录，就执行：
+
+```bash
+python3 scripts/gh_auth_bootstrap.py --login
+```
+
+或者直接执行：
+
+```bash
+gh auth login --git-protocol ssh
+```
+
+登录完成后，建议验证一次：
+
+```bash
+gh auth status
+```
+
 ### 1. 在对话中调用 skill
 
 你可以直接对 Codex 说：
@@ -108,9 +140,10 @@ Use $github-publish-update to publish this repo to GitHub.
 3. 检查 `.gitignore`
 4. 判断这是首次发布还是后续更新
 5. 优先用 GitHub MCP 创建或确认远程仓库
-6. 如果 MCP 不可用，则使用内置脚本走 GitHub API
-7. 暂存改动、创建提交、推送到远程
-8. 最后输出状态、远程地址和最新提交
+6. 如果 MCP 不可用，则优先走已登录的 GitHub CLI
+7. 如果 CLI 不可用，再使用内置脚本走 GitHub API
+8. 暂存改动、创建提交、推送到远程
+9. 最后输出状态、远程地址和最新提交
 
 ### 3. 直接运行脚本
 
@@ -121,6 +154,7 @@ Use $github-publish-update to publish this repo to GitHub.
 ```bash
 python3 scripts/git_publish_update.py /path/to/repo \
   --init-if-needed \
+  --prefer-gh-cli \
   --create-github-repo repo-name \
   --message "Initial publish"
 ```
@@ -154,6 +188,7 @@ python3 scripts/git_publish_update.py /path/to/repo \
 
 ```bash
 python3 scripts/git_publish_update.py /path/to/repo \
+  --prefer-gh-cli \
   --fork-github-repo owner/repo \
   --change-remote \
   --message "Push to fork"
@@ -173,13 +208,15 @@ export GITHUB_TOKEN=your_token_here
 export GITHUB_PAT=your_token_here
 ```
 
-脚本还会自动尝试以下来源：
+脚本会优先尝试以下 GitHub 认证来源：
 
 - `GITHUB_PAT`
 - `GITHUB_TOKEN`
 - `GH_TOKEN`
 - `GH_PAT`
 - `gh auth token`
+
+如果你使用 `--prefer-gh-cli`，远程仓库的创建和 fork 也会优先通过 `gh` CLI 完成。
 
 ## 推荐提问方式
 
@@ -205,10 +242,16 @@ export GITHUB_PAT=your_token_here
 
 ### `No GitHub API token available`
 
-说明当前没有可用的 GitHub 认证。请设置环境变量，或者先执行：
+说明当前没有可用的 GitHub 认证。优先建议先执行：
 
 ```bash
-gh auth login
+gh auth login --git-protocol ssh
+```
+
+如果你还没有安装 `gh`，先执行：
+
+```bash
+brew install gh
 ```
 
 ### `origin already exists and points to a different URL`
@@ -231,5 +274,6 @@ ssh -T git@github.com
 
 - 技能定义：[SKILL.md](./SKILL.md)
 - 决策流程：[references/workflow.md](./references/workflow.md)
+- GitHub CLI 登录引导脚本：[scripts/gh_auth_bootstrap.py](./scripts/gh_auth_bootstrap.py)
 - 主发布脚本：[scripts/git_publish_update.py](./scripts/git_publish_update.py)
 - GitHub 远程准备脚本：[scripts/github_prepare_remote.py](./scripts/github_prepare_remote.py)

@@ -3,6 +3,9 @@
 ## Decision Tree
 
 1. Check the local repository state first.
+   - Run `python3 scripts/gh_auth_bootstrap.py` or `gh auth status`.
+   - If `gh` is missing, install it with `brew install gh`.
+   - If `gh` is installed but unauthenticated, run `gh auth login --git-protocol ssh`.
    - Run `git status --short --branch`.
    - Run `git remote -v`.
    - Inspect `.gitignore`.
@@ -11,7 +14,8 @@
    - Later update: reuse `origin` unless the user wants a different repo.
 3. Decide how to resolve the remote repository.
    - Prefer GitHub MCP when it is available and authenticated.
-   - Otherwise use `scripts/git_publish_update.py --create-github-repo ...` or `--fork-github-repo ...`.
+   - Otherwise prefer GitHub CLI with `scripts/git_publish_update.py --prefer-gh-cli --create-github-repo ...` or `--fork-github-repo ...`.
+   - Use `scripts/gh_auth_bootstrap.py --login` when the user wants guided GitHub CLI onboarding.
    - The headless API path accepts `GITHUB_PAT`, `GITHUB_TOKEN`, `GH_TOKEN`, `GH_PAT`, or `gh auth token`.
    - Fall back to a user-provided GitHub URL only when the API path is unavailable.
 4. Decide how much to stage.
@@ -29,6 +33,7 @@
 ```bash
 python3 scripts/git_publish_update.py /path/to/repo \
   --init-if-needed \
+  --prefer-gh-cli \
   --create-github-repo repo-name \
   --message "Initial publish"
 ```
@@ -37,6 +42,7 @@ python3 scripts/git_publish_update.py /path/to/repo \
 
 ```bash
 python3 scripts/git_publish_update.py /path/to/repo \
+  --prefer-gh-cli \
   --fork-github-repo owner/repo \
   --change-remote \
   --message "Push to fork"
@@ -71,6 +77,7 @@ python3 scripts/git_publish_update.py /path/to/repo \
 
 - Do not overwrite `origin` silently.
 - Prefer SSH URLs to avoid interactive HTTPS credential prompts.
+- On first use, prefer guiding the user through `gh auth login --git-protocol ssh` so later uploads can complete directly.
 - Call out suspicious files before staging:
   - `.env`
   - tokens or credentials
