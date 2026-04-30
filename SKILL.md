@@ -28,7 +28,8 @@ Publish a local folder or git repository to GitHub, then reuse the same workflow
    - If CLI is unavailable, use the integrated headless GitHub API flow in `scripts/git_publish_update.py`.
    - The API helper uses `GITHUB_PAT`, `GITHUB_TOKEN`, `GH_TOKEN`, `GH_PAT`, or `gh auth token`.
    - Fall back to a user-provided repository URL when API-based creation is unavailable.
-7. Verify with `git status --short --branch`, `git remote -v`, and `git log --oneline --decorate -1`.
+7. If the user asks for bilingual documentation or README files, use the two-file bilingual README convention below before committing.
+8. Verify with `git status --short --branch`, `git remote -v`, and `git log --oneline --decorate -1`.
 
 ## Safety Checks
 
@@ -42,25 +43,49 @@ Publish a local folder or git repository to GitHub, then reuse the same workflow
 - If the working tree contains unrelated user changes, preserve them and stage only the intended paths.
 - Do not use a browser as a default fallback. If GitHub MCP, `gh`, API tokens, and a user-provided remote are all unavailable, stop and ask for a GitHub token or repository URL instead.
 
+## Bilingual README Convention
+
+When the user asks for a bilingual README, bilingual docs, Chinese and English docs, or says "中英双语 README":
+
+1. Create two separate files instead of mixing both languages in one README:
+   - `README.md` for English.
+   - `README.zh-CN.md` for Simplified Chinese.
+2. Add the same language switcher directly under the H1 title in both files:
+
+   ```markdown
+   [English](./README.md) | [简体中文](./README.zh-CN.md)
+   ```
+
+3. Keep the structure parallel across both files:
+   - Same major sections.
+   - Same setup commands where applicable.
+   - Same project-specific claims and links.
+4. Do not use bilingual slash headings like `Features / 功能` in the final files. Use English headings in `README.md` and Chinese headings in `README.zh-CN.md`.
+5. If the repo already has a mixed bilingual README, split it into the two-file format before publishing.
+6. Stage and commit both README files together, and mention both file paths in the final response.
+7. If the user provides a reference repository style, mirror its language-switcher format unless it conflicts with these rules.
+
 ## Workflows
 
 ### Publish a new local folder
 
 1. If the folder is not a git repo, use `--init-if-needed`.
 2. Start with `python3 scripts/git_publish_update.py /path/to/repo --simple` when the user wants the quickest path.
-3. Create or identify the GitHub repo with GitHub MCP when available.
-4. Otherwise create it through GitHub CLI with `scripts/git_publish_update.py --simple` or `--prefer-gh-cli --gh-login-if-needed --gh-setup-git --gh-remote-protocol https --create-github-repo ...`.
-5. If CLI is unavailable, create it headlessly with the token-based API path.
-6. Prefer HTTPS remotes by default so pushes can reuse the GitHub CLI credential helper.
-7. Use the SSH remote only when the user explicitly requests it.
+3. If documentation is part of the request, prepare README files before staging changes.
+4. Create or identify the GitHub repo with GitHub MCP when available.
+5. Otherwise create it through GitHub CLI with `scripts/git_publish_update.py --simple` or `--prefer-gh-cli --gh-login-if-needed --gh-setup-git --gh-remote-protocol https --create-github-repo ...`.
+6. If CLI is unavailable, create it headlessly with the token-based API path.
+7. Prefer HTTPS remotes by default so pushes can reuse the GitHub CLI credential helper.
+8. Use the SSH remote only when the user explicitly requests it.
 
 ### Update an existing GitHub repo
 
 1. Reuse `origin` if it already points to the correct repo.
 2. Stage either all changes or only the requested paths.
-3. Let the script skip the commit when nothing changed.
-4. If GitHub CLI is available, keep it authenticated so later pushes can proceed directly.
-5. Push the current branch or an explicit branch after confirming the target.
+3. If the update changes README language structure, apply the bilingual README convention before staging.
+4. Let the script skip the commit when nothing changed.
+5. If GitHub CLI is available, keep it authenticated so later pushes can proceed directly.
+6. Push the current branch or an explicit branch after confirming the target.
 
 ### Fork and push when the original repo is not writable
 

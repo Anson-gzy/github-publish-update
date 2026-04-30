@@ -22,7 +22,11 @@
 4. Decide how much to stage.
    - Use `--path` when the repo contains unrelated user changes.
    - Use the default full-repo stage only after checking ignored files and build artifacts.
-5. If the existing remote is not writable.
+5. If bilingual documentation is requested.
+   - Use two files: `README.md` for English and `README.zh-CN.md` for Simplified Chinese.
+   - Add `[English](./README.md) | [简体中文](./README.zh-CN.md)` under the H1 in both files.
+   - Keep sections parallel and avoid mixed-language headings in the final files.
+6. If the existing remote is not writable.
    - Prefer a headless fork workflow over browser automation.
    - Create the fork with `scripts/github_prepare_remote.py --fork owner/repo --json`.
    - Push to the fork and tell the user what happened.
@@ -78,6 +82,7 @@ python3 scripts/git_publish_update.py /path/to/repo \
 - Do not overwrite `origin` silently.
 - Prefer HTTPS remotes with `gh auth setup-git` for the default fast path.
 - Only switch to SSH when the user explicitly wants SSH.
+- Do not leave a mixed bilingual README when the user asked for Chinese and English docs; split it into `README.md` and `README.zh-CN.md`.
 - Call out suspicious files before staging:
   - `.env`
   - tokens or credentials

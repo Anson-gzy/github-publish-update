@@ -17,6 +17,7 @@ It prefers GitHub MCP for creating or verifying the remote repository. If MCP is
 - Offer a one-command `--simple` fast path
 - Prefer HTTPS remotes plus the GitHub CLI credential helper by default
 - Warn about `.env` files, large binaries, build outputs, model files, and other risky content before publishing
+- Create bilingual README docs as two separate files: `README.md` for English and `README.zh-CN.md` for Simplified Chinese
 
 ## Layout
 
@@ -181,7 +182,22 @@ The skill generally does this:
 8. Stage changes, create a commit, and push
 9. Print the resulting status, remote, and latest commit
 
-### 4. Run the scripts directly
+### 4. Bilingual README convention
+
+When a project needs Chinese and English documentation, use two separate README files instead of one mixed-language file:
+
+- `README.md`: English
+- `README.zh-CN.md`: Simplified Chinese
+
+Both files should put this language switcher directly under the H1 title:
+
+```markdown
+[English](./README.md) | [简体中文](./README.zh-CN.md)
+```
+
+Keep the two files parallel: same major sections, same commands, same project-specific claims, and same links where applicable. Avoid mixed headings like `Features / 功能`; use English headings in `README.md` and Chinese headings in `README.zh-CN.md`.
+
+### 5. Run the scripts directly
 
 #### Publish a local folder for the first time
 

@@ -17,6 +17,7 @@
 - 提供 `--simple` 一键发布模式
 - 默认优先使用 HTTPS 远程和 GitHub CLI 凭证助手，减少 SSH 配置问题
 - 对 `.env`、大文件、产物目录、模型文件等风险内容做发布前提示
+- 中英双语 README 默认拆成两份：英文 `README.md`，简体中文 `README.zh-CN.md`
 
 ## 目录结构
 
@@ -183,7 +184,22 @@ Use $github-publish-update to publish this repo to GitHub.
 8. 暂存改动、创建提交、推送到远程
 9. 输出最终状态、远程地址和最新提交
 
-### 4. 直接运行脚本
+### 4. 中英双语 README 规范
+
+当项目需要中英双语文档时，默认拆成两份 README，而不是把两种语言混在同一个文件里：
+
+- `README.md`：英文版
+- `README.zh-CN.md`：简体中文版
+
+两份文件都应该在 H1 标题下方放同样的语言切换栏：
+
+```markdown
+[English](./README.md) | [简体中文](./README.zh-CN.md)
+```
+
+两份 README 的结构要尽量平行：主要章节一致、安装命令一致、项目描述和链接一致。不要在最终文件里使用 `Features / 功能` 这种混合标题；英文文件用英文标题，中文文件用中文标题。
+
+### 5. 直接运行脚本
 
 #### 首次发布一个本地目录
 
