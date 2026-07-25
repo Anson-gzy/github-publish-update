@@ -7,3 +7,36 @@ __pycache__/
 .env.*
 .venv/
 .pytest_cache/
+._*
+.Spotlight-V100
+.Trashes
+
+# deps
+node_modules/
+*.pyc
+venv/
+
+# build output
+dist/
+build/
+.build/
+DerivedData/
+.derived-data/
+.derived-data-signed/
+*.xcarchive
+*.xcuserstate
+**/xcuserdata/
+
+# logs
+logs/
+
+# secrets
+.env.local
+.env.*.local
+*.p8
+*.pem
+*.key
+*.p12
+AuthKey_*
+
+
